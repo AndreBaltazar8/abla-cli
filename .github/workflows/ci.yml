@@ -11,5 +11,5 @@ jobs:
         with:
           repository: AndreBaltazar8/ablac
           path: ablac
-      - run: make -C ablac bootstrap
-      - run: make test COMPILER="$GITHUB_WORKSPACE/ablac/build/ablac.bin"
+      - run: ablac/tools/bootstrap-compiler.sh "$RUNNER_TEMP/ablac"
+      - run: make test COMPILER="$RUNNER_TEMP/ablac"
