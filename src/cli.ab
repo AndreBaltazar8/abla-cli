@@ -1,0 +1,241 @@
+import "abla/compiler/parser"
+import "abla/process/arguments"
+
+class CliOption(val id: string, val long: string, val short: string,
+    val valueName: string, val description: string, val required: bool,
+    val persistent: bool, val defaultValue: string, val choices: array<string>)
+class CliArgument(val name: string, val description: string,
+    val required: bool, val variadic: bool)
+class CliCommand(val name: string, val description: string, val aliases: array<string>,
+    val options: array<CliOption>, val arguments: array<CliArgument>,
+    val commands: array<CliCommand>)
+class CliValue(val id: string, val value: string, val provided: bool)
+class CliMatch(val succeeded: bool, val kind: string, val message: string,
+    val path: array<string>, val values: array<CliValue>, val arguments: array<string>)
+class CliApp(val name: string, val version: string, val description: string,
+    val options: array<CliOption>, val commands: array<CliCommand>)
+
+fun cliOption(id: string, long: string, short: string, valueName: string,
+    description: string, required: bool = false, persistent: bool = false,
+    defaultValue: string = "", choices: array<string> = []): CliOption =
+    CliOption(id, long, short, valueName, description, required, persistent, defaultValue, choices)
+fun cliFlag(id: string, long: string, short: string, description: string,
+    persistent: bool = false): CliOption =
+    CliOption(id, long, short, "", description, false, persistent, "false", [])
+fun cliArgument(name: string, description: string, required: bool = true,
+    variadic: bool = false): CliArgument = CliArgument(name, description, required, variadic)
+fun cliCommand(name: string, description: string, aliases: array<string> = [],
+    options: array<CliOption> = [], arguments: array<CliArgument> = [],
+    commands: array<CliCommand> = []): CliCommand =
+    CliCommand(name, description, aliases, options, arguments, commands)
+fun cliApplication(name: string, version: string, description: string,
+    options: array<CliOption> = [], commands: array<CliCommand> = []): CliApp =
+    CliApp(name, version, description, options, commands)
+
+fun CliMatch.has(id: string): bool {
+    var found = false
+    var i = 0
+    while (!found && i < this.values.size) { found = this.values[i].id == id && this.values[i].provided; i = i + 1 }
+    found
+}
+fun CliMatch.value(id: string, fallback: string = ""): string {
+    var value = fallback
+    var i = 0
+    while (i < this.values.size) { if (this.values[i].id == id) value = this.values[i].value; i = i + 1 }
+    value
+}
+fun CliMatch.argument(index: int, fallback: string = ""): string =
+    if (index >= 0 && index < this.arguments.size) this.arguments[index] else fallback
+fun CliMatch.isCommand(expected: string): bool {
+    var joined = ""
+    var i = 0
+    while (i < this.path.size) { joined = "$joined${if (i == 0) "" else " "}${this.path[i]}"; i = i + 1 }
+    joined == expected
+}
+
+fun cliStarts(value: string, prefix: string): bool = value.size >= prefix.size && value.slice(0, prefix.size) == prefix
+fun cliCommandMatches(command: CliCommand, value: string): bool {
+    if (command.name == value) return true
+    var found = false
+    var i = 0
+    while (!found && i < command.aliases.size) { found = command.aliases[i] == value; i = i + 1 }
+    found
+}
+fun cliFindCommand(commands: array<CliCommand>, value: string): CliCommand {
+    var result = CliCommand("", "", [], [], [], [])
+    var i = 0
+    while (result.name == "" && i < commands.size) { if (cliCommandMatches(commands[i], value)) result = commands[i]; i = i + 1 }
+    result
+}
+fun cliFindOption(options: array<CliOption>, long: string): CliOption {
+    var result = CliOption("", "", "", "", "", false, false, "", [])
+    var i = 0
+    while (result.id == "" && i < options.size) { if (options[i].long == long || options[i].short == long) result = options[i]; i = i + 1 }
+    result
+}
+fun cliChoiceValid(option: CliOption, value: string): bool {
+    if (option.choices.size == 0) return true
+    var found = false
+    var i = 0
+    while (!found && i < option.choices.size) { found = option.choices[i] == value; i = i + 1 }
+    found
+}
+fun cliAppendUnique(var options: array<CliOption>, option: CliOption) {
+    var found = false
+    var i = 0
+    while (!found && i < options.size) { found = options[i].id == option.id; i = i + 1 }
+    if (!found) options.append(option)
+}
+fun cliAvailable(global: array<CliOption>, inherited: array<CliOption>, local: array<CliOption>): array<CliOption> {
+    val result: array<CliOption> = []
+    var i = 0
+    while (i < global.size) { cliAppendUnique(result, global[i]); i = i + 1 }
+    i = 0
+    while (i < inherited.size) { cliAppendUnique(result, inherited[i]); i = i + 1 }
+    i = 0
+    while (i < local.size) { cliAppendUnique(result, local[i]); i = i + 1 }
+    result
+}
+fun cliSet(var values: array<CliValue>, id: string, value: string, provided: bool) {
+    var replaced = false
+    var i = 0
+    while (!replaced && i < values.size) {
+        if (values[i].id == id) { values[i] = CliValue(id, value, provided); replaced = true }
+        i = i + 1
+    }
+    if (!replaced) values.append(CliValue(id, value, provided))
+}
+
+fun CliApp.parse(arguments: array<string>): CliMatch {
+    var current = CliCommand("", this.description, [], [], [], this.commands)
+    val inherited: array<CliOption> = []
+    val path: array<string> = []
+    val values: array<CliValue> = []
+    val positionals: array<string> = []
+    var positionalOnly = false
+    var i = 0
+    while (i < arguments.size) {
+        val token = arguments[i]
+        if (!positionalOnly && token == "--") { positionalOnly = true; i = i + 1 }
+        else if (!positionalOnly && (token == "--help" || token == "-h"))
+            return CliMatch(true, "help", this.help(path), path, values, positionals)
+        else if (!positionalOnly && (token == "--version" || token == "-V"))
+            return CliMatch(true, "version", "${this.name} ${this.version}", path, values, positionals)
+        else if (!positionalOnly && cliStarts(token, "-")) {
+            var key = token
+            var inline = ""
+            var split = -1
+            var x = 0
+            while (split < 0 && x < token.size) { if (token[x] == 61) split = x; x = x + 1 }
+            if (split >= 0) { key = token.slice(0, split); inline = token.slice(split + 1, token.size) }
+            val option = cliFindOption(cliAvailable(this.options, inherited, current.options), key)
+            if (option.id == "") return CliMatch(false, "error", "unknown option $key", path, values, positionals)
+            var value = "true"
+            if (option.valueName != "") {
+                if (split >= 0) value = inline
+                else if (i + 1 < arguments.size) { i = i + 1; value = arguments[i] }
+                else return CliMatch(false, "error", "$key requires ${option.valueName}", path, values, positionals)
+                if (!cliChoiceValid(option, value)) return CliMatch(false, "error", "invalid value for $key: $value", path, values, positionals)
+            }
+            cliSet(values, option.id, value, true)
+            i = i + 1
+        } else {
+            val child = if (positionals.size == 0) cliFindCommand(current.commands, token) else CliCommand("", "", [], [], [], [])
+            if (child.name != "") {
+                var o = 0
+                while (o < current.options.size) { if (current.options[o].persistent) cliAppendUnique(inherited, current.options[o]); o = o + 1 }
+                current = child; path.append(child.name); i = i + 1
+            } else { positionals.append(token); i = i + 1 }
+        }
+    }
+    if (path.size == 0) return CliMatch(true, "help", this.help(path), path, values, positionals)
+    val definitions = cliAvailable(this.options, inherited, current.options)
+    i = 0
+    while (i < definitions.size) {
+        val option = definitions[i]
+        var supplied = false
+        var v = 0
+        while (!supplied && v < values.size) { supplied = values[v].id == option.id; v = v + 1 }
+        if (!supplied && option.required) return CliMatch(false, "error", "missing required option ${option.long}", path, values, positionals)
+        if (!supplied) cliSet(values, option.id, option.defaultValue, false)
+        i = i + 1
+    }
+    var required = 0
+    var variadic = false
+    i = 0
+    while (i < current.arguments.size) { if (current.arguments[i].required) required = required + 1; if (current.arguments[i].variadic) variadic = true; i = i + 1 }
+    if (positionals.size < required || (!variadic && positionals.size > current.arguments.size))
+        return CliMatch(false, "error", "invalid arguments\n${this.help(path)}", path, values, positionals)
+    CliMatch(true, "command", "", path, values, positionals)
+}
+fun CliApp.parseProcess(): CliMatch {
+    val arguments: array<string> = []
+    var i = 0
+    while (i < processArgumentCount()) { arguments.append(processArgument(i)); i = i + 1 }
+    this.parse(arguments)
+}
+
+fun cliUsageArguments(command: CliCommand): string {
+    var result = ""
+    var i = 0
+    while (i < command.arguments.size) {
+        val arg = command.arguments[i]
+        val label = if (arg.variadic) "${arg.name}..." else arg.name
+        result = "$result ${if (arg.required) "<$label>" else "[$label]"}"
+        i = i + 1
+    }
+    result
+}
+fun CliApp.command(path: array<string>): CliCommand {
+    var current = CliCommand(this.name, this.description, [], this.options, [], this.commands)
+    var i = 0
+    while (i < path.size) { val next = cliFindCommand(current.commands, path[i]); if (next.name != "") current = next; i = i + 1 }
+    current
+}
+fun CliApp.help(path: array<string>): string {
+    val command = this.command(path)
+    var heading = this.name
+    var p = 0
+    while (p < path.size) { heading = "$heading ${path[p]}"; p = p + 1 }
+    var result = "${if (path.size == 0) "${this.name} ${this.version}" else heading}\n\n${command.description}\n\nUsage:\n  $heading${if (command.options.size + this.options.size > 0) " [options]" else ""}${cliUsageArguments(command)}${if (command.commands.size > 0) " [command]" else ""}"
+    if (command.commands.size > 0) {
+        result = "$result\n\nCommands:"
+        var i = 0
+        while (i < command.commands.size) { result = "$result\n  ${command.commands[i].name}\t${command.commands[i].description}"; i = i + 1 }
+    }
+    val opts = if (path.size == 0) this.options else cliAvailable(this.options, [], command.options)
+    result = "$result\n\nOptions:\n  -h, --help\tShow help\n  -V, --version\tShow version"
+    var i = 0
+    while (i < opts.size) {
+        val option = opts[i]
+        result = "$result\n  ${if (option.short != "") "${option.short}, " else "    "}${option.long}${if (option.valueName != "") " <${option.valueName}>" else ""}\t${option.description}"
+        i = i + 1
+    }
+    result
+}
+
+// `$cli` uses ordinary Abla expressions for its string values and emits the
+// same typed runtime tree as the constructors above.
+compile fun cliDslString(cursor: ParserCursor): SyntaxExpression {
+    parserRawSkipWhitespace(cursor)
+    parserRawExpect(cursor, "(")
+    val value = parserParseAblaExpression(cursor)
+    parserRawExpect(cursor, ")")
+    value
+}
+compile fun cliDslParse(cursor: ParserCursor): SyntaxExpression {
+    parserRawSkipWhitespace(cursor)
+    parserRawExpect(cursor, "{")
+    val name = parserParseAblaExpression(cursor)
+    parserRawExpect(cursor, ",")
+    val version = parserParseAblaExpression(cursor)
+    parserRawExpect(cursor, ",")
+    val description = parserParseAblaExpression(cursor)
+    parserRawExpect(cursor, ",")
+    val options = parserParseAblaExpression(cursor)
+    parserRawExpect(cursor, ",")
+    val commands = parserParseAblaExpression(cursor)
+    parserRawExpect(cursor, "}")
+    syntaxCall("cliApplication", [name, version, description, options, commands])
+}
+#compilerRegisterSubparser("cli", cliDslParse)
