@@ -11,5 +11,5 @@ jobs:
         with:
           repository: AndreBaltazar8/ablac
           path: ablac
-      - run: make -C ablac ablac
+      - run: make -C ablac bootstrap
       - run: make test ABLAC_DIR="$GITHUB_WORKSPACE/ablac"
