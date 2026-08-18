@@ -2,7 +2,8 @@ import "../src/cli.ab"
 
 fun main: int {
     val app = $cli {"demo", "1.2.3", "A useful demo", [cliFlag("json", "--json", "-j", "JSON output", true)], [
-        cliCommand("serve", "Serve files", ["s"], [cliOption("port", "--port", "-p", "PORT", "Listening port", false, false, "8080")], [cliArgument("directory", "Root directory")])
+        cliCommand("serve", "Serve files", ["s"], [cliOption("port", "--port", "-p", "PORT", "Listening port", false, false, "8080")], [cliArgument("directory", "Root directory")]),
+        cliCommand("restore", "Restore a revision", [], [cliOption("revision", "--version", "", "VERSION", "Revision version", true)], [cliArgument("id", "Revision identifier")])
     ]}
     val parsed = app.parse(["s", "--port=9000", "public", "--json"])
     if (!parsed.succeeded || !parsed.isCommand("serve")) 1
@@ -15,5 +16,8 @@ fun main: int {
     else if (app.parse(["--version"]).message != "demo 1.2.3") 8
     else if (app.help([]).size < 80) 9
     else if (!app.parse(["serve", "--help"]).succeeded) 10
+    else if (!app.parse(["restore", "record", "--version", "7"]).succeeded) 11
+    else if (app.parse(["restore", "record", "--version", "7"]).kind != "command") 12
+    else if (app.parse(["restore", "record", "--version", "7"]).value("revision") != "7") 13
     else 0
 }

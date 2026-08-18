@@ -17,7 +17,8 @@ val match = app.parseProcess()
 `CliApp` provides nested commands, aliases, global and persistent options,
 long and short flags, `--option=value`, `--`, defaults, required values,
 choice validation, required/optional/variadic arguments, generated help and
-version output, and structured `CliMatch` results. The `$cli` subparser builds
+version output, local options that can intentionally shadow a built-in such as
+`--version`, and structured `CliMatch` results. The `$cli` subparser builds
 the same typed tree at compile time, so applications keep their command schema
 beside their code rather than maintaining a second usage string.
 
