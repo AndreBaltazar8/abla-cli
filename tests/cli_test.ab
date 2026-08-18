@@ -14,5 +14,6 @@ fun main: int {
     else if (app.parse(["serve", "--unknown", "public"]).succeeded) 7
     else if (app.parse(["--version"]).message != "demo 1.2.3") 8
     else if (app.help([]).size < 80) 9
+    else if (!app.parse(["serve", "--help"]).succeeded) 10
     else 0
 }

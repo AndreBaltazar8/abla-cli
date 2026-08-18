@@ -203,12 +203,21 @@ fun CliApp.help(path: array<string>): string {
         var i = 0
         while (i < command.commands.size) { result = "$result\n  ${command.commands[i].name}\t${command.commands[i].description}"; i = i + 1 }
     }
+    if (command.arguments.size > 0) {
+        result = "$result\n\nArguments:"
+        var a = 0
+        while (a < command.arguments.size) {
+            val argument = command.arguments[a]
+            result = "$result\n  ${argument.name}${if (argument.variadic) "..." else ""}\t${argument.description}${if (argument.required) " (required)" else ""}"
+            a = a + 1
+        }
+    }
     val opts = if (path.size == 0) this.options else cliAvailable(this.options, [], command.options)
     result = "$result\n\nOptions:\n  -h, --help\tShow help\n  -V, --version\tShow version"
     var i = 0
     while (i < opts.size) {
         val option = opts[i]
-        result = "$result\n  ${if (option.short != "") "${option.short}, " else "    "}${option.long}${if (option.valueName != "") " <${option.valueName}>" else ""}\t${option.description}"
+        result = "$result\n  ${if (option.short != "") "${option.short}, " else "    "}${option.long}${if (option.valueName != "") " <${option.valueName}>" else ""}\t${option.description}${if (option.required) " (required)" else ""}${if (option.defaultValue != "" && option.valueName != "") " (default: ${option.defaultValue})" else ""}"
         i = i + 1
     }
     result
