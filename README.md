@@ -18,7 +18,8 @@ val match = app.parseProcess()
 long and short flags, `--option=value`, `--`, defaults, required values,
 choice validation, required/optional/variadic arguments, generated help and
 version output, local options that can intentionally shadow a built-in such as
-`--version`, and structured `CliMatch` results. The `$cli` subparser builds
+`--version` without producing ambiguous help, and structured `CliMatch`
+results. The `$cli` subparser builds
 the same typed tree at compile time, so applications keep their command schema
 beside their code rather than maintaining a second usage string.
 

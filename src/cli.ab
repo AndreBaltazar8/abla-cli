@@ -73,6 +73,8 @@ fun cliFindOption(options: array<CliOption>, long: string): CliOption {
     while (result.id == "" && i < options.size) { if (options[i].long == long || options[i].short == long) result = options[i]; i = i + 1 }
     result
 }
+fun cliHasOptionName(options: array<CliOption>, name: string): bool =
+    cliFindOption(options, name).id != ""
 fun cliChoiceValid(option: CliOption, value: string): bool {
     if (option.choices.size == 0) return true
     var found = false
@@ -214,7 +216,13 @@ fun CliApp.help(path: array<string>): string {
         }
     }
     val opts = if (path.size == 0) this.options else cliAvailable(this.options, [], command.options)
-    result = "$result\n\nOptions:\n  -h, --help\tShow help\n  -V, --version\tShow version"
+    result = "$result\n\nOptions:\n  -h, --help\tShow help"
+    val hasVersionShort = cliHasOptionName(opts, "-V")
+    val hasVersionLong = cliHasOptionName(opts, "--version")
+    if (!hasVersionShort && !hasVersionLong)
+        result = "$result\n  -V, --version\tShow version"
+    else if (!hasVersionShort) result = "$result\n  -V\tShow version"
+    else if (!hasVersionLong) result = "$result\n      --version\tShow version"
     var i = 0
     while (i < opts.size) {
         val option = opts[i]
