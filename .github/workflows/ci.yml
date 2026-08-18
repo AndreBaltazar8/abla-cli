@@ -11,5 +11,7 @@ jobs:
         with:
           repository: AndreBaltazar8/ablac
           path: ablac
-      - run: ablac/tools/bootstrap-compiler.sh "$RUNNER_TEMP/ablac"
-      - run: make test COMPILER="$RUNNER_TEMP/ablac"
+      - name: Test with the pinned bootstrap compiler
+        run: |
+          ablac/tools/bootstrap-compiler.sh "$PWD/build/ablac-bootstrap"
+          make test COMPILER="$PWD/build/ablac-bootstrap"
